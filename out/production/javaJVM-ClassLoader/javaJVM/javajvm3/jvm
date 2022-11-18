@@ -1,0 +1,178 @@
+ASM字节码编程
+既然字节码文件结构如此清晰 那么我们能否通过编程 来直接创建一个字节码文件呢 如果我们可以直接编写一个字节码文件 那么我们就可以省去编译的过程 ASM(某些JDK中内置) 框架正是用于支持字节码编程的框架
+
+比如现在我们需要创建一个普通的Main类(暂时不写任何内容)
+
+首先我们来看看如何通过编程创建一个Main类的字节码文件:
+                    public static void main(String[] args) {
+
+                        ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+
+                    }
+
+首先需要获取ClassWriter对象 我们可以使用它来编辑类的字节码文件 在构造时需要传入参数:
+    > () 这种方式不会自动计算操作数栈和局部临时变量表大小 需要自己手动来指定
+    > lassWriter.COMPUTE_MAXS 这种方式会自动计算上述操作数栈和局部临时变量表大小 但需要手动触发
+    > ClassWriter.COMPUTE_FRAMES 这种方式不仅会计算上述操作数栈和局部临时变量表大小 而且会自动计算StackMapFrames
+
+这里我们使用ClassWriter.COMPUTE_MAXS即可
+
+接着我们首先来指定类的一些基本信息:
+                    public static void main(String[] args) {
+
+                        ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+                        // 因为这里用到的常量比较多 所以说直接一次性静态导入: mport static jdk.internal.org.objectweb.asm.Opcodes.*;
+                        writer.visit(V1_8, ACC_PUBLIC, "com/test3/Main", null, "java/lang/Object", null);
+
+                    }
+
+这里我们将字节码文件的版本设定位Java8 然后修饰符设定为ACC_PUBLIC代表public class Main 类名称注意要携带包名 标签设置为null 父类设定为Object类 然后没有实现任何接口 所以说最后一个参数也是null
+
+接着 一个简答的类字节码文件就创建好了 我们可以尝试将其进行保存:
+                    public static void main(String[] args) {
+
+                        ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+                        writer.visit(V1_8, ACC_PUBLIC, "com/test3/Main", null, "java/lang/Object", null);
+                        writer.visitEnd();
+
+                        try(FileOutputStream stream = new FileOutputStream("./Main.class")) {
+                            stream.write(writer.toByteArray()); // 直接通过ClassWriter将字节码文件转换为byte数组 并保存到根目录
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+
+                    }
+
+可以看到 在IDEA中反编译的结果为:
+                    package com.test3;
+
+                    public class Main {
+                    }
+
+我们知道 正常的类在编译之后 如果没有手动添加构造方法 那么会自带一个无参构造 但是我们这个类中还没有 所以我们来手动添加一个无参构造方法
+                    // 通过visitMethod方法可以添加一个新的方法
+                    writer.visitMethod(ACC_PUBLIC, "<init>", "()V", null, null);
+
+可以看到反编译的结果中已经存在了我们的构造方法:
+                    public class Main {
+                        public Main() {
+                        }
+                    }
+
+但是这样是不合法的 因为我们的构造方法还没有添加父类构造方法调用 所以说我们还需要在方法中添加父类构造方法调用指令:
+                    public com.test.Main();
+                        descriptor: ()V
+                        flags: ACC_PUBLIC
+                        Code:
+                          stack=1, locals=1, args_size=1
+                             0: aload_0
+                             1: invokespecial #1                  // Method java/lang/Object."<init>":()V
+                             4: return
+                          LineNumberTable:
+                            line 11: 0
+                          LocalVariableTable:
+                            Start  Length  Slot  Name   Signature
+                                0       5     0  this   Lcom/test/Main;
+
+我们需要对方进行详细编辑:
+                    // 通过MethodVisitor接收返回值 进行进一步操作
+                    MethodVisitor visitor = writer.visitMethod(ACC_PUBLIC, "<init>", "()V", null, null);
+                    // 开始编辑代码
+                    visitor.visitCode();
+
+                    // Label用于存储行号
+                    Label l1 = new Label();
+                    // 当前代码写到哪行了 l1得到的就是多少行
+                    visitor.visitLabel(l1);
+                    // 添加源码行数对应表(其实可以不用)
+                    visitor.visitLineNumber(11, l1);
+
+                    // 注意不同类型的指令需要用不同方法来调用 因为操作数不一致 具体的注释有写
+                    visitor.visitVarInsn(ALOAD, 0);
+                    visitor.visitMethodInsn(INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+                    visitor.visitInsn(RETURN);
+
+                    Label l2 = new Label();
+                    visitor.visitLabel(l2);
+                    // 添加本地变量表 这里加的是this关键字 但是方法中没用到 其实可以不加
+                    visitor.visitLocalVariable("this", "Lcom/test/Main;", null, l1, l2, 0);
+
+                    // 最后设定最大栈深度和本地变量数
+                    visitor.visitMaxs(1, 1);
+                    // 结束编辑
+                    visitor.visitEnd();
+
+我们可以对编写好的class文件进行反编译 看看是不是和IDEA编译之后的结果差不多:
+                    {
+                      public com.test3.Main();
+                        descriptor: ()V
+                        flags: (0x0001) ACC_PUBLIC
+                        Code:
+                          stack=1, locals=1, args_size=1
+                             0: aload_0
+                             1: invokespecial #8                  // Method java/lang/Object."<init>":()
+                    V
+                             4: return
+                          LocalVariableTable:
+                            Start  Length  Slot  Name   Signature
+                                0       5     0  this   Lcom/test3/Main
+                          LineNumberTable:
+                            line 11: 0
+                    }
+
+可以看到和之前的基本一致了 到此为止我们构造方法就编写完成了 接着我们来写一下main方法 一会我们就可以通过main方法来运行Java程序了 比如我们要编写这样一个程序:
+                    public static void main(String[] args) {
+
+                        int a = 10;
+                        System.out.println(a);
+
+                    }
+
+看起来很简单的一个程序对吧 但是如果我们手动去组装指令 会极其麻烦 首先main方法是一个静态方法 并且方法是public权限 然后还有一个参数String[] args 所以说我们这里要写的内容有点小多:
+                            ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+                            writer.visit(V1_8, ACC_PUBLIC, "com/test3/M2/Main", null, "java/lang/Object", null);
+                            // 开始安排main方法
+                            MethodVisitor v2 = writer.visitMethod(ACC_PUBLIC | ACC_STATIC, "main", "([Ljava/lang/String;)V", null, null);
+
+                            v2.visitCode();
+                            // 记录起始行信息
+                            Label l3 = new Label();
+                            v2.visitLabel(l3);
+                            v2.visitLineNumber(13, l3);
+
+                            // 首先是int a = 10的操作 执行指令依次为:
+                            // bipush 10     将10推向操作数栈顶
+                            // istore_1      将操作数栈顶元素保存到1号本地变量a中
+                            v2.visitIntInsn(BIPUSH, 10);
+                            v2.visitVarInsn(ISTORE, 1);
+
+                            Label l4 = new Label();
+                            v2.visitLabel(l4);
+                            // 记录一下行信息
+                            v2.visitLineNumber(14, l4);
+
+                            // 这里是获取System类中的out静态变量(PrintStream接口) 用于打印
+                            v2.visitFieldInsn(GETSTATIC, "java/lang/System", "out", "Ljava/io/PrintStream;");
+                            // 把a的值取出来
+                            v2.visitVarInsn(ILOAD, 1);
+                            // 调用接口中的抽象方法println
+                            v2.visitMethodInsn(INVOKEVIRTUAL, "java/io/PrintStream", "println", "(I)V", false);
+
+                            // 再次记录行信息
+                            Label l6 = new Label();
+                            v2.visitLabel(l6);
+                            v2.visitLineNumber(15, l6);
+
+                            v2.visitInsn(RETURN);
+                            Label l7 = new Label();
+                            v2.visitLabel(l7);
+
+                            // 最后是本地变量表中的各个变量
+                            v2.visitLocalVariable("args", "[Ljava/lang/String;", null, l3, l7, 0);
+                            v2.visitLocalVariable("a", "I", null, l4, l7, 1);
+                            v2.visitMaxs(1, 2);
+                            // 终于OK了
+                            v2.visitEnd();
+
+可以看到 虽然很简单的一个程序 但是如果我们手动去编写字节码 实际上是非常麻烦的 但是要实现动态代理之类的操作(可以很方便地修改字节码创建子类)
+是不是感觉又Get到了新操作(其实Spring实现动态代理的CGLib框架底层正是调用了ASM框架来实现的)所以说了解一下还是可以的 不过我们自己肯定是没多少玩这个的机会了

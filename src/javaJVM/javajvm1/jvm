@@ -1,0 +1,273 @@
+类与类加载器
+前面我们讲解了JVM的内存结构 包括JVM如何对内存进行划分 如何对内存区域进行垃圾回收 接下来 我们来研究一下类文件结构以及类的加载机制
+
+类文件结构
+在我们学习C语言的时候 我们的编程过程会经历如下几个阶段: 写代码 保存 编译 运行 实际上 最关键的一步是编译 因为只有经历了编译之后
+我们所编写的代码才能够翻译为机器可以直接运行的二进制代码 并在不同的操作系统下 我们的代码都需要进行一次编译之后才能运行
+
+    如果全世界所有计算机指令集只有x86一种 操作系统只有Windows一种 那也许就不会有java语言的出现
+
+随着时代的发展 人们迫切希望能够在不同的操作系统 不同的计算机结构中运行同一套编译之后的代码 本地代码不应该是我们编程的唯一选择
+所以 越来越多的语言选择了操作系统和机器指令集无关的中立格式作为编译后存储格式
+
+"一次编写 到此运行" java最引以为傲的口号 标志着平台不再是限制编程语言的阻碍
+
+实际上 java正是利用这样的解决方案 将源代码编译为平台无关的中间格式 并通过对应的java虚拟机读取和运行这些中间格式的编译文件
+这样 我们只需要考虑不同平台的虚拟机如何编写 而java语言本身很轻松地实现了跨平台
+
+现在 越来越多的开发语言都支持将源代码编译为.class字节码文件格式 以便能够直接交给JVM运行 包括Kotlin(安卓开发官方指定语言) Groovy Scala等
+
+那么 让我们来看看 我们的源代码编译之后 是如何保存在字节码文件中的
+
+类文件信息
+我们之前都是使用javap命令来对字节码文件进行反编译查看的 那么 它以二进制格式是怎么保存的呢 我们可以使用WinHex软件(Mac平台可以使用010 Editor)来以十六进制查看字节码文件
+                    public static void main(String[] args) {
+
+                        int i = 10;
+                        int a = i++;
+                        int b = ++i;
+
+                    }
+
+找到我们在IDEA中编译出来的class文件 将其拖动进去
+
+可以看到整个文件中 全是一个字节一个字节分组的样子 从左上角开始 一行一行向下读取 可以看到在右侧中还出现了一些我们之前也许见过的字符串 比如"<init>" "Object"等
+
+实际上Class文件采用了一种类似于C语言中结构体的伪结构来存储数据(当然我们直接看是看不出来的) 但是如果像这样呢?
+                    Classfile /D:/back-end learning/java-exercise/JavaSE/javaJVM-yxs/javaJVM-ClassLoader
+                    /out/production/javaJVM-ClassLoader/com/test1/Main.class
+                      Last modified 2022年9月11日; size 446 bytes
+                      SHA-256 checksum c545ae2d01101a3a22ca6e2e50beab1da050c683cde9ab3dcb13e26c5c877a19
+                      Compiled from "Main.java"
+                    public class com.test1.Main
+                      minor version: 0
+                      major version: 52
+                      flags: (0x0021) ACC_PUBLIC, ACC_SUPER
+                      this_class: #2                          // com/test1/Main
+                      super_class: #3                         // java/lang/Object
+                      interfaces: 0, fields: 0, methods: 2, attributes: 1
+                    Constant pool:
+                       #1 = Methodref          #3.#21         // java/lang/Object."<init>":()V
+                       #2 = Class              #22            // com/test1/Main
+                       #3 = Class              #23            // java/lang/Object
+                       #4 = Utf8               <init>
+                       #5 = Utf8               ()V
+                       #6 = Utf8               Code
+                       #7 = Utf8               LineNumberTable
+                       #8 = Utf8               LocalVariableTable
+                       #9 = Utf8               this
+                      #10 = Utf8               Lcom/test1/Main;
+                      #11 = Utf8               main
+                      #12 = Utf8               ([Ljava/lang/String;)V
+                      #13 = Utf8               args
+                      #14 = Utf8               [Ljava/lang/String;
+                      #15 = Utf8               i
+                      #16 = Utf8               I
+                      #17 = Utf8               a
+                      #18 = Utf8               b
+                      #19 = Utf8               SourceFile
+                      #20 = Utf8               Main.java
+                      #21 = NameAndType        #4:#5          // "<init>":()V
+                      #22 = Utf8               com/test1/Main
+                      #23 = Utf8               java/lang/Object
+                    {
+                      public com.test1.Main();
+                        descriptor: ()V
+                        flags: (0x0001) ACC_PUBLIC
+                        Code:
+                          stack=1, locals=1, args_size=1
+                             0: aload_0
+                             1: invokespecial #1                  // Method java/lang/Object."<init>":()
+                    V
+                             4: return
+                          LineNumberTable:
+                            line 3: 0
+                          LocalVariableTable:
+                            Start  Length  Slot  Name   Signature
+                                0       5     0  this   Lcom/test1/Main;
+
+                      public static void main(java.lang.String[]);
+                        descriptor: ([Ljava/lang/String;)V
+                        flags: (0x0009) ACC_PUBLIC, ACC_STATIC
+                        Code:
+                          stack=1, locals=4, args_size=1
+                             0: bipush        10
+                             2: istore_1
+                             3: iload_1
+                          LocalVariableTable:
+                            Start  Length  Slot  Name   Signature
+                                0      14     0  args   [Ljava/lang/String;
+                                3      11     1     i   I
+                                8       6     2     a   I
+                               13       1     3     b   I
+                    }
+                    SourceFile: "Main.java"
+
+乍一看 是不是感觉还真的有点结构体那味
+
+而结构体中 有两种允许存在的数据类型 一个是无符号树 还有一个是表
+    > 无符号数一般是基本数据类型 用u1 u2 u4 u8来表示 表示1个字节~8个字节的无符号数 可以表示数字 索引引用 数量值或是以UTF-8编码格式的字符串
+    > 表包含多个无符号数 并且以"_info"结尾
+
+我们首先从最简单的开始看起
+
+首先 我们可以看到 前4个字节(共32位) 组成了魔数(其实就是表示这个文件是一个JVM可以运行的字节码文件 除了java以外 其他某些文件中也采用了这种魔数机制来进行区分 这种方式比直接起个文件扩展名更安全)
+
+字节码文件的魔数为: CAFEBABE(这名字能想出来也是挺难的了 毕竟4个Bit位只能表示出A-F这几个字母)
+
+紧接着 魔数的后面4个字节存储的是字节码文件的版本号 注意: 前两个是次要版本号(现在基本都不用了 都是直接java8 java9这样命名了) 后面两个是主要版本号 这里我们主要看主版本号
+比如上面的就是34 注意这是以16进制表示的 我们把它换算为10机制后 得到结果为: 34 -> 3*16 + 4 = 52 其中52代表的是JDK8编译的字节码文件(51是JDK7 50是JDK6 53是JDK9 以此类推)
+
+JVM会根据版本号决定是否能够运行 比如JDK6只能支持版本号为1.1~6的版本 也就是说必须是java6之前的环境编译出来的字节码文件 否则无法运行 又比如我们现在安装的是JDK8版本
+它能够支持的版本号为1.1~8 那么如果这时我们有一个通过java7编译出来的字节码文件 依然可以运行的 所以说java版本是向下兼容的
+
+紧接着 就是类的常量池了 这里面存放了类中所有的常量信息(注意: 这里的常量并不是指我们手动创建的final类型常量 而是程序运行一些需要用到的常量数据 比如字面量和符号引用等)
+由于常量的数量不是确定的 所以在最开始的位置会存放常量池中常量的数量(是从1开始计算的 不是0 比如这里是18 翻译为10进制就是24 所以实际上有23个常量)
+
+接着再往下 就是常量池里面的数据了 每一项常量池里面的数据都是一个表 我们可以看到他们都是以_info结尾的
+
+我们来看看一个表中定义了哪些内容
+
+首先上来就会有一个1字节的无符号数 它用于表示当前常量的类型(常量类型有很多个) 这里只列举一部分的类型介绍:
+
+                                类型                      标志                      描述
+                        CONSTANT_Utf8_info                1                 UTF-8编码格式的字符串
+                        CONSTANT_Integer_info             3                 整型字面量(第一章我们演示的很大的数字 实际上就是以字面量存储再常量池中的)
+                        CONSTANT_Class_info               7                 类或接口的符号引用
+                        CONSTANT_String_info              8                 字符串的符号引用
+                        CONSTANT_Fieldref_info            9                 字段的符号引用
+                        CONSTANT_Methodref_info           10                方法的符号引用
+                        CONSTANT_MethodType_info          16                方法类型
+                        CONSTANT_NameAndType_info         12                字段或方法的部分符号引用
+
+实际上这些东西 虽然我们不知道符号引用是什么东西 我们可以观察出来 这些东西或多或少都是存放类中一些名称 数据之类的东西
+
+比如我们来看第一个CONSTANT_Methodref_info表中存放了什么数据 这里我只列出它的结构表(详细的结构表可以查阅《深入了解java虚拟机 第三版》中222页总表):
+
+                                常量                  项目      类型                  描述
+                      CONSTANT_Methodref_info        tag       u1                  值为10
+                                                    index      u2                  指向声明方法的描述父CONSTANT_Class_info索引项
+                                                    index      u2                  指向名称及类型描述符CONSTANT_NameAndType_info索引项
+
+比如我们刚刚的例子中 可以看到 第一个索引项指向了第三号常量 我们来看看三号常量:
+
+                                常量                  项目      类型                  描述
+                      CONSTANT_Class_info            tag       u1                  值为7
+                                                    index      u2                  指向全限定名常量项的索引
+
+那么我们接着来看23号常量又写的啥
+
+可以看到指向的UTF-8字符串值为java/lang/Object 这下搞明白了 首先这个方法是由Object类定义的 那么接着我们来看第二项u2 name_and_type_index指向了21号常量 也就是字段或方法的部分符号引用
+
+                                常量                  项目      类型                  描述
+                      CONSTANT_NameAndType_info      tag       u1                  值为12
+                                                    index      u2                  指向字段或方法名称常量项的索引
+                                                    index      u2                  指向字段或方法描述符常量项的索引
+
+其实第一个索引就是方法的名称 第二个就是方法的描述符 描述符明确了方法的参数以及返回值类型 我们分别来看看4号和5号常量
+
+可以看到 方法名称为"<init>" 一般构造方法的名称都是<init> 普通方法名称是声明就是什么 方法描述符为"()V" 表示此方法没有任何参数 并且返回值类型为void 描述符对照表如下:
+
+                                标识字符              含义              标识字符              含义
+                                   B             基本类型Byte             J             基本类型long
+                                   C             基本类型char             S             基本类型short
+                                   D             基本类型double           Z             基本类型boolean
+                                   F             基本类型float            V             特殊类型void
+                                   I             基本类型int              L             对象类型 如Ljava/lang/Object
+
+比如这里有一个方法public int test(double a, char c){...} 那么它的描述符就应该是: (DC)I 参数依次放入括号中 括号右边是返回值类型
+再比如public String test(Object obj){...} 那么它的描述符就应该是: (Ljava/lang/Object;)Ljava/lang/String 注意: 如果参数是对象类型 那么必须在后面添加
+
+对于数字类型 只需要在类型最前面加上[即可 有几个维度 就加几个 比如public void test(int[][] arr)] 参数是应该二维int类型数组 那么它的描述符为: ([[I)V
+
+所以 这里表示的 实际上就是此方法是一个无参构造方法 并且是属于Object类的 那么 为什么这里需要Object类构造方法的符号引用呢? 还记得我们在javaSE中说到的
+每个类都是直接或间接继承自Object类 所有类的构造方法 必须先调用父类的构造方法 但是如果父类存在无参构造 默认可以不用显示调用super关键字(当然本质上是调用了的)
+
+所以说 当前类因为没有继承自任何其他类 那么就默认继承的Object类 所以 在当前类的默认构造方法中 调用了父类Object类的无参构造方法 因此这里需要符号引用的用途显而易见 就是因为需要用Object类的无参构造方法
+
+我们可以在反编译结果中的方法中看到:
+                     public com.test1.Main();
+                        descriptor: ()V
+                        flags: (0x0001) ACC_PUBLIC
+                        Code:
+                          stack=1, locals=1, args_size=1
+                             0: aload_0
+                             1: invokespecial #1                  // Method java/lang/Object."<init>":()
+                    V
+                             4: return
+                          LineNumberTable:
+                            line 3: 0
+                          LocalVariableTable:
+                            Start  Length  Slot  Name   Signature
+                                0       5     0  this   Lcom/test1/Main;
+
+其中invakespecial(调用父类构造方法)指令的参数指向了1号常量 而1号常量正是代表的Object类的无参构造方法 虽然饶了这么大一圈 但是过程理清楚 这是很简单的
+
+虽然我们可以直接查看十六进制的结果 但是还是不够方便 但是我们也不能每次都去使用javap命令 所以我们这里安装一个IDEA插件 来方便我们查看字节码中的信息 名称为jclasslib Bytecode Viewer
+
+安装完成后 我们可以在我们的IDEA右侧看到它的板块 但是还没有任何数据 那么比如现在我们想要查看Main类的字节码文件时 可以这样操作
+
+首先在项目中选中我们的Main类 然后点击工具栏的视图 然后点击Show Bytecode With Jclasslib 这样右侧就会出现当前类的字节码解析信息了 注意: 如果修改了类的话 那么需要你点击运行或是构建 然后点击刷新按钮来进行更新
+
+接着我们来看一下内容 在常量池之后 紧接着就是访问标志 访问标志就是类的种类以及类上添加的一些关键字等内容 可以看到它只占了2个字节 那么它是如何表示访问标志呢?
+
+                    标志名称            标志值             含义
+                  ACC_PUBLIC          0x0001            是否为public类型
+                  ACC_FINAL           0x0010            是否被声明为final 只有类可设置
+                  ACC_SUPER           0x0020            是否允许使用invokespecial字节码指令的新语意 invokespecial指令的语意在JDK1.0.2发生过改变 为了区别这条指令使用哪种语意 JDK1.0.2之后编译出来的类的这个标志都必须为真
+                  ACC_INTERFACE       0X0200            标识这是一个接口
+                  ACC_ABSTRACT        0x0400            是否为abstract类型 对于接口或者抽象类来说 此标志值为真 其他类值为假
+                  ACC_SYNTHETIC       0x1000            标识这个类并非由用户代码产生的
+                  ACC_ANNOTATION      0x2000            标识这是一个注解
+                  ACC_ENUM            0x4000            标识这是一个枚举
+
+比如我们这里的Main类 它是一个普通的class类型 并且访问权限为public 那么它的访问标志值是这样计算的:
+    ACC_PUBLIC | ACC_SUPER = 0x0001 | 0x0020 = 0x0021(这里进行的是按位或运算) 可以看到和我们上面的结果是一致的
+
+再往下就是类索引 父类索引 接口索引
+
+可以看到它们的值也是指向常量池中的值 其中2号常量正是存储的当前类信息 3号常量存储的是父类信息 这里就不再倒推回去了 由于没有接口 所以这里接口数量为0 如果不为0还会有一个索引表来引用接口
+
+接着就是字段和方法表集合了
+
+由于我们这里没有声明任何字段 所以我们先给Main类添加一个字段再重新加载一下
+                    public class Main {
+
+                        public static int a = 10;
+
+                        public static void main(String[] args) {
+
+                            int i = 10;
+                            int a = i++;
+                            int b = ++i;
+
+                        }
+
+                    }
+
+现在字节码就新增了一个字段表 这个字段表实际上就是我们刚刚添加的成员字段a的数据
+
+可以看到一共有四个2字节的数据 首先是access_flags 这个与上面类标志的计算规则是一样的
+
+第二个数据name_index表示字段的名称常量 这里指向的是5号常量 那么我们来看看5号常量是不是字段名称
+
+没问题 这里就是a 下一个是descirptor_index 存放的是描述符 不过这里因为不是方法而是变量 所以描述符直接写对应类型的标识字符即可 比如这里是int类型 那么就是I
+
+最后 attrbutes_count属性计数器 用于描述一些额外信息 这里我们暂时不做介绍
+
+接着就是我们的方法表了 可以看到方法表中一共有三个方法 其中第一个方法我们刚刚已经介绍过了 它的方法名称为<init> 表示它是一个构造方法 我们看到最后一个方法名称为<clinit>
+这个是类在初始化时会调用的方法(是隐式的 自动生成的)它主要是用于静态变量初始化语句和静态块的执行 因为我们这里给静态成员变量a赋值为10 所以会在一开始为其赋值
+
+而第二个方法 就是我们的main方法了 但是现在我们先不急着去看它的详细实现过程 我们来看看它的属性表
+
+属性表实际上类中 字段中 方法中都可以携带自己的属性表 属性表存放的正是我们的代码 本地变量等数据 比如main方法就存在4个本地变量 那么它的本地变量存放在哪里呢
+
+可以看到 属性信息呈现套娃状态 在此方法中的属性包括了一个Code属性 此属性正是我们的Java代码编译之后变成字节码指令 然后存放的地方 而在此属性中 又嵌套了本地变量表和源码行号表
+
+可以看到code中存放的就是所有的字节码指令 这里我们暂时不对字节码指令进行讲解(其实也用不着讲了 都认识的差不多了)我们接着来看本地变量表 这里存放了我们方法中要用到的局部变量
+
+可以看到一共有四个本地变量 而第一个变量正是main方法的形参String[] args 并且表中存放了本地变量的长度 名称 描述符等内容 当然 除了我们刚刚认识的这几个属性之外 完整属性可以查阅《深入理解Java虚拟机 第三版》231页
+
+最后 类也有一些属性 此属性记录的是源文件名称
+
+这样 我们对一个字节码文件的认识差不多就结束了 在了解了字节码文件的结构之后 是不是感觉豁然开朗

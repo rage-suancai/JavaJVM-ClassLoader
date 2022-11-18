@@ -1,0 +1,62 @@
+类加载器
+java提供了类加载器 以便我们自己可以更好地控制类加载 我们可以自定义类加载器 也可以使用官方自带的类加载器去加载类
+对于任意一个类 都必须由加载它的类加载器和这个类本身一起共同确立其在java虚拟机中的唯一性
+
+也就是说 一个类可以由不同的类加载器加载 并且 不同的类加载器加载出来的类即使来自同一个Class文件 也是不同的
+只有两个类来自同一个Class文件并且是由同一个类加载器加载的 才能判断为是同一个 默认情况下 所有的类都是由JDK自带的类加载器进行加载
+
+比如 我们先创建一个Test类用于测试:
+                    package com.test5;
+
+                    public class Test {
+
+                    }
+
+接着我们自己实现一个ClassLoader来加载我们的Test类 同时使用官方默认的类加载器来加载:
+                    public class Main {
+
+                        static class CustomClassLoader extends ClassLoader{
+
+                            @Override
+                            public Class<?> loadClass(String name) throws ClassNotFoundException {
+                                try (FileInputStream stream = new FileInputStream("./target/classes/" + name.replace(".", "/") + ".class")){
+                                    byte[] data = new byte[stream.available()];
+                                    stream.read(data);
+
+                                    if (data.length == 0) return super.loadClass(name);
+                                    return defineClass(name, data, 0, data.length);
+                                } catch (IOException e) {
+                                    return super.loadClass(name);
+                                }
+                            }
+
+                        }
+
+                        public static void main(String[] args) throws ClassNotFoundException, InstantiationException, IllegalAccessException {
+
+                            Class<?> testClass1 = Main.class.getClassLoader().loadClass("com.test5.Test");
+                            CustomClassLoader customClassLoader = new CustomClassLoader();
+                            Class<?> testClass2 = customClassLoader.loadClass("com.test5.Test");
+
+                            // 看看两个类的类加载器是不是同一个
+                            System.out.println(testClass1.getClassLoader());
+                            System.out.println(testClass2.getClassLoader());
+                            // 看看两个类是不是长得一模一样
+                            System.out.println(testClass1);
+                            System.out.println(testClass2);
+                            // 两个类是同一个吗?
+                            System.out.println(testClass1 == testClass2);
+                            // 能成功实现类型转换吗?
+                            Test test = (Test) testClass2.newInstance();
+
+                        }
+
+                    }
+
+过结果我们发现 即使两个类是同一个Class文件加载的 只要类加载器不同 那么这两个类就是不同的两个类
+
+所以说 我们当时在JavaSE阶段讲解的每个类都在堆中有一个唯一的Class对象放在这里来看 并不完全正确 只是当前为了防止各位初学者搞混
+
+实际上 JDK内部提供的类加载器一共有三个 比如上面我们的Main类 其实是被AppClassLoader加载的 而JDK内部的类 都是由BootstrapClassLoader加载的 这其实就是为了实现双亲委派机制而做的
+
+有关双亲委派机制 我们在JavaSE阶段反射板块已经讲解过了 所以说这就不多做介绍了
